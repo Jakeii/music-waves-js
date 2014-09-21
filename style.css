@@ -51,3 +51,7 @@ p, h2 {
       
 [red] { color: #913149; }
 [right] { text-align: right; }
+
+#waveform {
+  height: 50px;
+}

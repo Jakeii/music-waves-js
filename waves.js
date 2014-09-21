@@ -1,54 +1,106 @@
-var escapeRegexes,
-    escapeKeys,
-    amplitude = 36,
-    frequency = Math.PI / 17,
-    offset = 75,
-    phase = 0,
-    phase_increment = Math.PI / 36;
+(function(document, window, SC){
+  Musicwave = function() {
+    this.amplitude = 200;
 
-escapeRegexes = {
-  "&amp;": /&/g,
-  "&lt;": /</g,
-  "&gt;": />/g,
-  "&quot;": /"/g,
-  "&#39;": /'/g,
-};
-escapeKeys = Object.keys(escapeRegexes);
+    this.escapeRegexes = {
+      "&amp;": /&/g,
+      "&lt;": /</g,
+      "&gt;": />/g,
+      "&quot;": /"/g,
+      "&#39;": /'/g,
+    };
 
-function update() {
-  var length = 0,
-      x = 0,
-      i, words, lines, word, text;
+    this.escapeKeys = Object.keys(this.escapeRegexes);
+    document.getElementById('status').innerHTML = "Fetching Track Data...";
+    SC.get("/tracks/144638044", function(track){
+      this.waveform = new Waveform({
+        container: document.getElementById("waveform"),
+        innerColor: "#333"
+      });
 
-  document.getElementById("left").innerHTML = "";
-  words = content.split(/\s/);
-  lines = [];
+      this.desiredWaveformLength = 1200;
+      this.positionToUpdateInterval = track.duration / this.desiredWaveformLength;
+      //this.desiredWaveformLength = track.duration;
+      //this.positionToUpdateInterval = 1;
+      this.nextPositionToUpdate = this.positionToUpdateInterval;
 
-  for (i = 0; i < words.length; i++) {
-    if (!lines[x]) {
-      lines[x] = '';
-    }
+      this.waveform.dataFromSoundCloudTrack(track);
 
-    word = clean(words[i]) + '&nbsp;';
-    lines[x] += word;
+      var streamOptions = this.waveform.optionsForSyncedStream();
 
-    length += word.length;
-    if (length >= (offset + Math.sin(phase + x * frequency) * amplitude)) {
-      x++;
+
+      SC.whenStreamingReady(function() {
+        SC.stream(track.uri, streamOptions, function(stream){
+          this.stream = stream;    
+          console.log('stream loaded');  
+        }.bind(this));
+      }.bind(this));
+
+    }.bind(this));
+  }
+
+  Musicwave.prototype.renderLines = function(data) {
+    this.lines = this.genLines(data);
+
+    var text = this.lines.join('<br>');
+    document.getElementById("left").innerHTML = text;
+    document.getElementById("right").innerHTML = text;
+
+    document.getElementById('status').innerHTML = "Done! <a onclick=\"musicwave.play();\" href=\"#\">&#9658; Play</a> <a onclick=\"musicwave.pause();\" href=\"#\">&#9616;&#9616; Pause</a>";
+  }
+
+  Musicwave.prototype.play = function() {
+    this.stream.play();
+  }
+  Musicwave.prototype.pause = function() {
+    this.stream.pause();
+  }
+  Musicwave.prototype.genLines = function(data) {
+    var waveData = this.waveform.interpolateArray(data, this.desiredWaveformLength);
+    var length = 0,
+        x = 0,
+        i, words, lines, word, text;
+
+    document.getElementById("left").innerHTML = "";
+    words = content.split(/\s/);
+    lines = [];
+
+    for (i = 0; i < waveData.length; i++) {
+      document.getElementById('status').innerHTML = "Rendering text as waveform (" + ((i/waveData.length)*100).toFixed() + "%)";
+      if (!lines[i]) {
+        lines[i] = '';
+      }
+
+      while(length < (waveData[i] * this.amplitude)) {
+        word = this.clean(words[x]) + '&nbsp;';
+        lines[i] += word;
+        length += word.length;
+        x++;
+        if(x === words.length) x = 0;
+      }
+
       length = 0;
+    }
+    return lines;
+  }
+
+  Musicwave.prototype.update = function(stream) {
+    if(stream.position > this.nextPositionToUpdate){
+      this.lines.shift();
+      var text = this.lines.join('<br>');
+      document.getElementById("left").innerHTML = text;
+      document.getElementById("right").innerHTML = text;
+      this.nextPositionToUpdate = this.nextPositionToUpdate + this.positionToUpdateInterval;
     }
   }
 
-  text = lines.join('<br>');
-  document.getElementById("left").innerHTML = text;
-  document.getElementById("right").innerHTML = text;
+  Musicwave.prototype.clean = function(word) {
+    this.escapeKeys.forEach(function (key) {
+      word = word.replace(this.escapeRegexes[key], key);
+    }.bind(this));
+    return word;
+  }
 
-  phase += phase_increment;
-}
+  window.Musicwave = Musicwave;
 
-function clean(word) {
-  escapeKeys.forEach(function (key) {
-    word = word.replace(escapeRegexes[key], key);
-  });
-  return word;
-}
+})(document, window, SC);
